@@ -1,4 +1,4 @@
-# Copyright (c) 2016-2021 Franco Fichtner <franco@opnsense.org>
+# Copyright (c) 2016-2022 Franco Fichtner <franco@opnsense.org>
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -39,23 +39,13 @@ GITVERSION=	${SCRIPTSDIR}/version.sh
 _PLUGIN_ARCH!=	uname -p
 PLUGIN_ARCH?=	${_PLUGIN_ARCH}
 
-OPENSSL?=	${LOCALBASE}/bin/openssl
-
-.if ! defined(PLUGIN_FLAVOUR)
-.if exists(${OPENSSL})
-_PLUGIN_FLAVOUR!=	${OPENSSL} version
-PLUGIN_FLAVOUR?=	${_PLUGIN_FLAVOUR:[1]}
-.else
-.warning "Detected 'Base' flavour is not currently supported"
-PLUGIN_FLAVOUR?=	Base
-.endif
-.endif
-
 VERSIONBIN=	${LOCALBASE}/sbin/opnsense-version
 
 .if exists(${VERSIONBIN})
 _PLUGIN_ABI!=	${VERSIONBIN} -a
 PLUGIN_ABI?=	${_PLUGIN_ABI}
+.else
+PLUGIN_ABI?=	23.7
 .endif
 
 PHPBIN=		${LOCALBASE}/bin/php
@@ -72,9 +62,6 @@ _PLUGIN_PYTHON!=${PYTHONLINK} -V
 PLUGIN_PYTHON?=	${_PLUGIN_PYTHON:[2]:S/./ /g:[1..2]:tW:S/ //}
 .endif
 
-.if !empty(DEVABI)
-PLUGIN_ABI=	${DEVABI}
-.endif
 
 .for REPLACEMENT in ABI PHP PYTHON
 . if empty(PLUGIN_${REPLACEMENT})
@@ -84,12 +71,12 @@ PLUGIN_ABI=	${DEVABI}
 
 REPLACEMENTS=	PLUGIN_ABI \
 		PLUGIN_ARCH \
-		PLUGIN_FLAVOUR \
 		PLUGIN_HASH \
 		PLUGIN_MAINTAINER \
 		PLUGIN_NAME \
 		PLUGIN_PKGNAME \
 		PLUGIN_PKGVERSION \
+		PLUGIN_TIER \
 		PLUGIN_VARIANT \
 		PLUGIN_WWW
 
@@ -122,8 +109,12 @@ ensure-stable:
 		git config branch.stable/${PLUGIN_ABI}.remote origin; \
 	fi
 
+diff_ARGS?= 	.
+
 diff: ensure-stable
 	@git diff --stat -p stable/${PLUGIN_ABI} ${.CURDIR}/${diff_ARGS:[1]}
+
+mfc_ARGS?=	.
 
 mfc: ensure-stable
 .for MFC in ${mfc_ARGS}
@@ -131,9 +122,9 @@ mfc: ensure-stable
 	@git diff --stat -p stable/${PLUGIN_ABI} ${.CURDIR}/${MFC} > /tmp/mfc.diff
 	@git checkout stable/${PLUGIN_ABI}
 	@git apply /tmp/mfc.diff
-	@git add ${.CURDIR}
+	@git add ${.CURDIR}/${MFC}
 	@if ! git diff --quiet HEAD; then \
-		git commit -m "${MFC}: sync with master"; \
+		git commit -m "${MFC:S/^.$/${PLUGIN_DIR}/}: sync with master"; \
 	fi
 .else
 	@git checkout stable/${PLUGIN_ABI}
@@ -153,4 +144,12 @@ master:
 rebase:
 	@git checkout stable/${PLUGIN_ABI}
 	@git rebase -i
+	@git checkout master
+
+log:
+	@git log --stat -p stable/${PLUGIN_ABI}
+
+push:
+	@git checkout stable/${PLUGIN_ABI}
+	@git push
 	@git checkout master

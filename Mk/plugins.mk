@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2021 Franco Fichtner <franco@opnsense.org>
+# Copyright (c) 2015-2023 Franco Fichtner <franco@opnsense.org>
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -44,6 +44,8 @@ PLUGIN_SCRIPTS=		+PRE_INSTALL +POST_INSTALL \
 			+PRE_DEINSTALL +POST_DEINSTALL
 
 PLUGIN_WWW?=		https://opnsense.org/
+PLUGIN_LICENSE?=	BSD2CLAUSE
+PLUGIN_TIER?=		3
 PLUGIN_REVISION?=	0
 
 PLUGIN_REQUIRES=	PLUGIN_NAME PLUGIN_VERSION PLUGIN_COMMENT \
@@ -80,6 +82,10 @@ PLUGIN_CONFLICTS+=	${${_PLUGIN_VARIANT}_NAME}
 PLUGIN_DEPENDS+=	${${PLUGIN_VARIANT}_DEPENDS}
 .endif
 
+.if !empty(PLUGIN_NAME)
+PLUGIN_DIR?=		${.CURDIR:S/\// /g:[-2]}/${.CURDIR:S/\// /g:[-1]}
+.endif
+
 PLUGIN_PKGNAMES=	${PLUGIN_PREFIX}${PLUGIN_NAME}${PLUGIN_SUFFIX} \
 			${PLUGIN_PREFIX}${PLUGIN_NAME}
 .for CONFLICT in ${PLUGIN_CONFLICTS}
@@ -101,12 +107,6 @@ PLUGIN_PKGVERSION=	${PLUGIN_VERSION}_${PLUGIN_REVISION}
 PLUGIN_PKGVERSION=	${PLUGIN_VERSION}
 .endif
 
-name: check
-	@echo ${PLUGIN_PKGNAME}
-
-depends: check
-	@echo ${PLUGIN_DEPENDS}
-
 manifest: check
 	@echo "name: ${PLUGIN_PKGNAME}"
 	@echo "version: \"${PLUGIN_PKGVERSION}\""
@@ -117,7 +117,7 @@ manifest: check
 	@echo "www: \"${PLUGIN_WWW}\""
 	@echo "prefix: \"${LOCALBASE}\""
 	@echo "licenselogic: \"single\""
-	@echo "licenses: [ \"BSD2CLAUSE\" ]"
+	@echo "licenses: [ \"${PLUGIN_LICENSE}\" ]"
 .if defined(PLUGIN_NO_ABI)
 	@echo "arch: \"${OSABIPREFIX:tl}:*:*\""
 	@echo "abi: \"${OSABIPREFIX}:*:*\""
@@ -133,6 +133,9 @@ manifest: check
 	done
 	@echo "}"
 .endif
+	@if [ -f ${WRKSRC}/usr/local/opnsense/version/${PLUGIN_NAME} ]; then \
+	    echo "annotations $$(cat ${WRKSRC}/usr/local/opnsense/version/${PLUGIN_NAME})"; \
+	fi
 
 scripts: check scripts-pre scripts-auto scripts-manual scripts-post
 
@@ -257,14 +260,14 @@ package: check
 .for DEP in ${PLUGIN_DEPENDS}
 	@if ! ${PKG} info ${DEP} > /dev/null; then ${PKG} install -yA ${DEP}; fi
 .endfor
-	@echo -n ">>> Generating metadata for ${PLUGIN_PKGNAME}-${PLUGIN_PKGVERSION}..."
-	@${MAKE} DESTDIR=${WRKSRC} metadata
-	@echo " done"
 	@echo -n ">>> Staging files for ${PLUGIN_PKGNAME}-${PLUGIN_PKGVERSION}..."
 	@${MAKE} DESTDIR=${WRKSRC} install
 	@echo " done"
 	@echo ">>> Generated version info for ${PLUGIN_PKGNAME}-${PLUGIN_PKGVERSION}:"
 	@cat ${WRKSRC}/usr/local/opnsense/version/${PLUGIN_NAME}
+	@echo -n ">>> Generating metadata for ${PLUGIN_PKGNAME}-${PLUGIN_PKGVERSION}..."
+	@${MAKE} DESTDIR=${WRKSRC} metadata
+	@echo " done"
 	@echo ">>> Packaging files for ${PLUGIN_PKGNAME}-${PLUGIN_PKGVERSION}:"
 	@${PKG} create -v -m ${WRKSRC} -r ${WRKSRC} \
 	    -p ${WRKSRC}/plist -o ${PKGDIR}
@@ -278,7 +281,7 @@ upgrade: upgrade-check package
 		${PKG} delete -fy ${NAME}; \
 	fi
 .endfor
-	@${PKG} add ${PKGDIR}/*.txz
+	@${PKG} add ${PKGDIR}/*.pkg
 
 mount: check
 	mount_unionfs ${.CURDIR}/src ${DESTDIR}${LOCALBASE}
@@ -301,7 +304,7 @@ lint-desc: check
 
 lint-shell:
 	@for FILE in $$(find ${.CURDIR}/src -name "*.sh" -type f); do \
-	    if [ "$$(head $${FILE} | grep -cx '#!\/bin\/sh')" == "0" ]; then \
+	    if [ "$$(head $${FILE} | grep -c '^#!\/')" == "0" ]; then \
 	        echo "Missing shebang in $${FILE}"; exit 1; \
 	    fi; \
 	    sh -n $${FILE} || exit 1; \
@@ -310,6 +313,32 @@ lint-shell:
 lint-xml:
 	@find ${.CURDIR}/src \
 	    -name "*.xml" -type f -print0 | xargs -0 -n1 xmllint --noout
+
+lint-model:
+	@if [ -d ${.CURDIR}/src/opnsense/mvc/app/models ]; then for MODEL in $$(find ${.CURDIR}/src/opnsense/mvc/app/models -depth 3 \
+	    -name "*.xml"); do \
+		(xmllint $${MODEL} --xpath '//*[@type and not(@type="ArrayField") and (not(Required) or Required="N") and Default]' 2> /dev/null | grep '^<' || true) | while read LINE; do \
+			echo "$${MODEL}: $${LINE} has a spurious default value set"; \
+		done; \
+		(xmllint $${MODEL} --xpath '//*[@type and not(@type="ArrayField") and Default=""]' 2> /dev/null | grep '^<' || true) | while read LINE; do \
+			echo "$${MODEL}: $${LINE} has an empty default value set"; \
+		done; \
+		(xmllint $${MODEL} --xpath '//*[@type and not(@type="ArrayField") and BlankDesc="None"]' 2> /dev/null | grep '^<' || true) | while read LINE; do \
+			echo "$${MODEL}: $${LINE} blank description is the default"; \
+		done; \
+		(xmllint $${MODEL} --xpath '//*[@type and not(@type="ArrayField") and BlankDesc and Required="Y"]' 2> /dev/null | grep '^<' || true) | while read LINE; do \
+			echo "$${MODEL}: $${LINE} blank description not applicable on required field"; \
+		done; \
+		(xmllint $${MODEL} --xpath '//*[@type and not(@type="ArrayField") and BlankDesc and Multiple="Y"]' 2> /dev/null | grep '^<' || true) | while read LINE; do \
+			echo "$${MODEL}: $${LINE} blank description not applicable on multiple field"; \
+		done; \
+		(xmllint $${MODEL} --xpath '//*[@type and not(@type="ArrayField") and Multiple="N"]' 2> /dev/null | grep '^<' || true) | while read LINE; do \
+			echo "$${MODEL}: $${LINE} Multiple=N is the default"; \
+		done; \
+		(xmllint $${MODEL} --xpath '//*[@type and not(@type="ArrayField") and OptionValues[default[not(@value)] or multiple[not(@value)] or required[not(@value)]]]' 2> /dev/null | grep '^<' || true) | while read LINE; do \
+			echo "$${MODEL}: $${LINE} option element default/multiple/required without value attribute"; \
+		done; \
+	done; fi
 
 lint-exec: check
 .for DIR in ${.CURDIR}/src/opnsense/scripts ${.CURDIR}/src/etc/rc.d ${.CURDIR}/src/etc/rc.syshook.d
@@ -320,7 +349,12 @@ lint-exec: check
 .endif
 .endfor
 
+LINTBIN?=	${.CURDIR}/../../../core/contrib/parallel-lint/parallel-lint
+
 lint-php: check
+.if exists(${LINTBIN})
+	@if [ -d ${.CURDIR}/src ]; then ${LINTBIN} src; fi
+.else
 	@find ${.CURDIR}/src \
 	    ! -name "*.xml" ! -name "*.xml.sample" ! -name "*.eot" \
 	    ! -name "*.svg" ! -name "*.woff" ! -name "*.woff2" \
@@ -328,8 +362,9 @@ lint-php: check
 	    ! -name "*.scss" ! -name "*.py" ! -name "*.ttf" ! -name "*.txz" \
 	    ! -name "*.tgz" ! -name "*.xml.dist" ! -name "*.sh" ! -name "bootstrap80.php" \
 	    -type f -print0 | xargs -0 -n1 php -l
+.endif
 
-lint: lint-desc lint-shell lint-xml lint-exec lint-php
+lint: lint-desc lint-shell lint-xml lint-model lint-exec lint-php
 
 sweep: check
 	find ${.CURDIR}/src -type f -name "*.map" -print0 | \
@@ -345,7 +380,7 @@ sweep: check
 	    xargs -0 -n1 ${SCRIPTSDIR}/cleanfile
 
 revision:
-	@${SCRIPTSDIR}/revbump.sh ${.CURDIR}
+	@MAKE=${MAKE} ${SCRIPTSDIR}/revbump.sh ${.CURDIR}
 
 STYLEDIRS?=	src/etc/inc src/opnsense
 
@@ -377,6 +412,14 @@ style-python: check
 	@if [ -d ${.CURDIR}/src ]; then \
 		pycodestyle --ignore=E501 ${.CURDIR}/src || true; \
 	fi
+
+style-model:
+	@for MODEL in $$(find ${.CURDIR}/src/opnsense/mvc/app/models -depth 3 \
+	    -name "*.xml"); do \
+		perl -i -pe 's/<default>(.*?)<\/default>/<Default>$$1<\/Default>/g' $${MODEL}; \
+		perl -i -pe 's/<multiple>(.*?)<\/multiple>/<Multiple>$$1<\/Multiple>/g' $${MODEL}; \
+		perl -i -pe 's/<required>(.*?)<\/required>/<Required>$$1<\/Required>/g' $${MODEL}; \
+	done
 
 test: check
 	@if [ -d ${.CURDIR}/src/opnsense/mvc/tests ]; then \

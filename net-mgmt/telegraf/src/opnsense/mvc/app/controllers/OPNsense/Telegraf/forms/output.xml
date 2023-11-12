@@ -36,6 +36,12 @@
         <help>Set the password for authentication.</help>
     </field>
     <field>
+        <id>output.influx_insecure_skip_verify</id>
+        <label>Disable SSL verification</label>
+        <type>checkbox</type>
+        <help>This will skip chain and host verification.</help>
+    </field>
+    <field>
         <id>output.influx_v2_enable</id>
         <label>Enable Influx v2 Output</label>
         <type>checkbox</type>
@@ -64,6 +70,18 @@
         <label>Influx v2 Bucket</label>
         <type>text</type>
         <help>Set the name of the bucket in Influx v2.</help>
+    </field>
+    <field>
+        <id>output.influx_v2_insecure_skip_verify</id>
+        <label>Disable SSL verification v2</label>
+        <type>checkbox</type>
+        <help>This will skip chain and host verification.</help>
+    </field>
+    <field>
+        <id>output.influx_v2_timeout</id>
+        <label>Timeout</label>
+        <type>text</type>
+        <help>Flush timeout for the v2 Telegraf output in seconds, formatted as a string. If not provided, will default to 5. 0 means no timeout, but is not recommended. Increase if you get timeout errors.</help>
     </field>
     <field>
         <id>output.graphite_enable</id>
@@ -132,6 +150,18 @@
         <help>Set the URL where metrics shoud be sent to.</help>
     </field>
     <field>
+        <id>output.elastic_username</id>
+        <label>Elasticsearch Username</label>
+        <type>text</type>
+        <help>Optional HTTP basic authentication details for Elasticsearch.</help>
+    </field>
+        <field>
+        <id>output.elastic_password</id>
+        <label>Elasticsearch Password</label>
+        <type>text</type>
+        <help>Optional HTTP basic authentication details for Elasticsearch.</help>
+    </field>
+    <field>
         <id>output.elastic_timeout</id>
         <label>Timeout</label>
         <type>text</type>
@@ -184,5 +214,65 @@
         <label>Datadog API Key</label>
         <type>text</type>
         <help>Set the API Key for accessing Datadog.</help>
+    </field>
+    <field>
+        <id>output.mqtt_enable</id>
+        <label>Enable MQTT</label>
+        <type>checkbox</type>
+        <help>This will enable writes to a MQTT Broker acting as a mqtt Producer.</help>
+    </field>
+    <field>
+        <id>output.mqtt_topic_prefix</id>
+        <label>MQTT topic</label>
+        <type>text</type>
+        <help>Topic for producer messages.</help>
+    </field>
+    <field>
+        <id>output.mqtt_servers</id>
+        <label>MQTT brokers</label>
+        <type>text</type>
+        <help>URLs of mqtt brokers. Format is without square brackets, just like localhost:8083.</help>
+    </field>
+    <field>
+        <id>output.mqtt_qos</id>
+        <label>MQTT QoS</label>
+        <type>text</type>
+        <help>QoS policy for messages. 0 = at most once, 1 = at least once, 2 = exactly once. Defaults to 2. </help>
+    </field>
+    <field>
+        <id>output.mqtt_username</id>
+        <label>MQTT Username</label>
+        <type>text</type>
+        <help>Set the username for authentication.</help>
+    </field>
+    <field>
+        <id>output.mqtt_password</id>
+        <label>MQTT Password</label>
+        <type>text</type>
+        <help>Set the password for authentication.</help>
+    </field>
+    <field>
+        <id>output.mqtt_client_id</id>
+        <label>MQTT Client ID</label>
+        <type>text</type>
+        <help>Client ID, if not set a random ID is generated.</help>
+    </field>
+    <field>
+        <id>output.mqtt_timeout</id>
+        <label>MQTT Timeout</label>
+        <type>text</type>
+        <help>Timeout for write operations. Default is 5s. </help>
+    </field>
+    <field>
+        <id>output.mqtt_insecure_skip_verify</id>
+        <label>MQTT Client ID</label>
+        <type>checkbox</type>
+        <help>Use TLS, but skip chain and host verification.</help>
+    </field>
+    <field>
+        <id>output.mqtt_format</id>
+        <label>MQTT Format</label>
+        <type>text</type>
+        <help>Data format to output. Defaults to "influx".</help>
     </field>
 </form>

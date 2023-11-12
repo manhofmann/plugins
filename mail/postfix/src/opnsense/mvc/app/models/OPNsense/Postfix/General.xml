@@ -1,7 +1,7 @@
 <model>
     <mount>//OPNsense/postfix/general</mount>
     <description>Postfix configuration</description>
-    <version>1.2.6</version>
+    <version>1.2.7</version>
     <items>
         <enabled type="BooleanField">
             <default>0</default>
@@ -98,6 +98,7 @@
                 <none>none</none>
                 <may>may</may>
                 <encrypt>encrypt</encrypt>
+                <dane>dane</dane>
             </OptionValues>
         </smtpclient_security>
         <relayhost type="TextField">
@@ -185,5 +186,12 @@
             <default>0</default>
             <Required>Y</Required>
         </reject_unverified_recipient>
+        <delay_warning_time type="IntegerField">
+            <default>0</default>
+            <Required>N</Required>
+            <MinimumValue>0</MinimumValue>
+            <MaximumValue>24</MaximumValue>
+            <ValidationMessage>Choose a value between 1 and 24 to activate - 0 or empty to disable.</ValidationMessage>
+        </delay_warning_time>
     </items>
 </model>

@@ -6,6 +6,16 @@
         <help>This will activate the OSPFv3 service if routing protocols are enabled in "General".</help>
     </field>
     <field>
+      <id>ospf6.carp_demote</id>
+      <label>CARP demote</label>
+      <type>checkbox</type>
+      <help>
+            Register CARP status monitor, when no neighbors are found, consider this node less attractive.
+            This feature needs syslog enabled using "Debugging" logging to catch all relevant status events.
+            This option is not compatible with "Enable CARP Failover".
+      </help>
+    </field>
+    <field>
         <id>ospf6.redistribute</id>
         <label>Route Redistribution</label>
         <type>select_multiple</type>
@@ -17,5 +27,26 @@
         <label>Router ID</label>
         <type>text</type>
         <help>Router ID as IPv4 Address</help>
+    </field>
+    <field>
+        <id>ospf6.originate</id>
+        <label>Advertise Default Gateway</label>
+        <type>checkbox</type>
+        <help>This will send the information that we have a default gateway.</help>
+        <style>opt_checkbox</style>
+    </field>
+    <field>
+        <id>ospf6.originatealways</id>
+        <label>Always Advertise Default Gateway</label>
+        <type>checkbox</type>
+        <help>This will send the information that we have a default gateway, regardless of if it is available.</help>
+        <style>ospf6_originate</style>
+    </field>
+    <field>
+        <id>ospf6.originatemetric</id>
+        <label>Advertise Default Gateway Metric</label>
+        <type>text</type>
+        <help>This let you manipulate the metric when advertising default gateway.</help>
+        <style>ospf6_originate</style>
     </field>
 </form>

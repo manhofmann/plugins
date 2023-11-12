@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Copyright (C) 2020 Frank Wall
+ * Copyright (C) 2020-2021 Frank Wall
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,8 +28,6 @@
 
 namespace OPNsense\AcmeClient\LeValidation;
 
-require_once("interfaces.inc");
-
 use OPNsense\AcmeClient\LeValidationInterface;
 use OPNsense\AcmeClient\LeUtils;
 use OPNsense\Core\Config;
@@ -42,6 +40,8 @@ class HttpOpnsense extends Base implements LeValidationInterface
 {
     public function prepare()
     {
+        $configdir = (string)sprintf(self::ACME_CONFIG_DIR, $this->cert_id);
+
         // Get configured HTTP port for local lighttpd server.
         $configObj = Config::getInstance()->object();
         $local_http_port = $configObj->OPNsense->AcmeClient->settings->challengePort;
@@ -72,9 +72,10 @@ class HttpOpnsense extends Base implements LeValidationInterface
 
         // Add IP address from chosen interface
         if (!empty((string)$this->config->http_opn_interface)) {
-            $interface_ip = get_interface_ip((string)$this->config->http_opn_interface);
-            if (!empty($interface_ip)) {
-                $iplist[] = $interface_ip;
+            $backend = new \OPNsense\Core\Backend();
+            $response = $backend->configdpRun('interface address', [(string)$this->config->http_opn_interface]);
+            if (!empty($response['address'])) {
+                $iplist[] = $response['address'];
             }
         }
 
