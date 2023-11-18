@@ -54,7 +54,14 @@ class FTP extends Base implements IBackupProvider
                 "name" => "url",
                 "type" => "text",
                 "label" => gettext("URL"),
-                "help" => gettext("The URL to server with trailing slash. For example: ftp://ftp.example.com/ or ftp://ftp.example.com/folder/"),
+                "help" => gettext("The URL to server with trailing slash. For example: ftp://ftp.example.com/ or ftps://ftp.example.com/folder/"),
+                "value" => null
+            ),
+            array(
+                "name" => "port",
+                "type" => "text",
+                "label" => gettext("Port"),
+                "help" => gettext("The port you use for logging into your FTP server"),
                 "value" => null
             ),
             array(
@@ -77,7 +84,22 @@ class FTP extends Base implements IBackupProvider
                 "label" => gettext("Encryption Password (Optional)"),
                 "help" => gettext("A password to encrypt your configuration"),
                 "value" => null
+            ),
+            array(
+                "name" => "passive",
+                "type" => "checkbox",
+                "label" => gettext("Passive mode"),
+                "help" => gettext("Active to enable passive mode"),
+                "value" => null
+            ),
+            array(
+                "name" => "ssl",
+                "type" => "checkbox",
+                "label" => gettext("TLS/SSL"),
+                "help" => gettext("Active to enable TLS/SSL"),
+                "value" => null
             )
+
         );
         $ftp = new FTPSettings();
         foreach ($fields as &$field) {
@@ -119,13 +141,13 @@ class FTP extends Base implements IBackupProvider
      * @return array filelist
      * @throws \OPNsense\Base\ModelException
      * @throws \ReflectionException
-	 * @throws \Exception
+     * @throws \Exception
      */
     public function backup()
     {
         $cnf = Config::getInstance();
         $ftp = new FTPSettings();
-        
+
         if ($cnf->isValid() && !empty((string)$ftp->enabled)) {
             $config = $cnf->object();
 
@@ -133,23 +155,28 @@ class FTP extends Base implements IBackupProvider
             $user = (string)$ftp->user;
             $password = (string)$ftp->password;
             $crypto_password = (string)$ftp->password_encryption;
-			$hostname = $config->system->hostname . '.' . $config->system->domain;
-            
+            $port = (string)$ftp->port;
+            $hostname = $config->system->hostname . '.' . $config->system->domain;
+
             $configname = 'config-' . $hostname . '-' .  date('Y-m-d_H_i_s') . '.xml';
-            
+
             $confdata = file_get_contents('/conf/config.xml');
             if (!empty($crypto_password)) {
                 $confdata = $this->encrypt($confdata, $crypto_password);
             }
-            
-			$this->upload_file_content(
-				$url,
-				$user,
-				$password,
-				$configname,
-				$confdata );
-			
-			return $this->listFiles($url, $user, $password);
+
+            syslog(LOG_DEBUG, 'starting backup via ftp');
+
+            try {
+
+                $this->uploadFileContent($configname, $confdata);
+
+                return $this->listFiles($url, $user, $password, $port);
+
+            } catch (Exception $error) {
+                syslog(LOG_ERR, $error);
+            }
+
         }
 
     }
@@ -162,32 +189,21 @@ class FTP extends Base implements IBackupProvider
      * @return array
      * @throws \Exception when listing files fails
      */
-    public function listFiles($url, $username, $password)
+    public function listFiles($url, $username, $password, $port)
     {
-        $curl = curl_init();
+        $curl = $this->getCurlHandle($filename);
 
-        curl_setopt_array($curl, array(
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => true, // Do not output the data to STDOUT
-            CURLOPT_TIMEOUT => 60,          // maximum time: 1 min
-            CURLOPT_USERPWD => $username . ":" . $password,
+        $curlOptions = [
             CURLOPT_DIRLISTONLY => 1,
-        ));
-        
-        $response = curl_exec($curl);
-        
-        $error = curl_error($curl);
-        
-        curl_close($curl);
-        
-        if($error){
-            syslog(LOG_ERR, $error);
-            throw new \Exception($error);
-        }
+        ];
 
-		$files = explode("\n", $response);
-		
-		// e.g. filter folders ".." and "."
+        $this->setCurlOptions($curl, $curlOptions);
+
+        $response = $this->curlExecute($curl);
+
+        $files = explode("\n", $response);
+
+        // e.g. filter folders ".." and "."
         return preg_grep('"config-.*\.xml"', $files);
     }
 
@@ -200,34 +216,23 @@ class FTP extends Base implements IBackupProvider
      * @param string $file_content contents to save
      * @throws \Exception when upload fails
      */
-    public function upload_file_content($url, $username, $password, $filename, $file_content)
+    public function uploadFileContent($filename, $file_content)
     {
-        $curl = curl_init();
-    
+        $curl = $this->getCurlHandle($filename);
+
         $infile = tmpfile();
-        fwrite($infile, $file_content); 
-        fseek($infile, 0); 
-    
-        curl_setopt_array($curl, array(
-            CURLOPT_URL => $url . $filename,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 60,
+        fwrite($infile, $file_content);
+        fseek($infile, 0);
+
+        $curlOptions = [
             CURLOPT_UPLOAD => 1,
             CURLOPT_INFILE => $infile,
             CURLOPT_INFILESIZE => strlen($file_content),
-            CURLOPT_USERPWD => $username . ":" . $password,
-        ));
+        ];
 
-        curl_exec($curl);
-        $error = curl_error($curl);
+        $this->setCurlOptions($curl, $curlOptions);
 
-        curl_close($curl);
-        
-        if($error){
-            syslog(LOG_ERR, $error);
-            throw new \Exception($error);
-        }
-        
+        $this->curlExecute($curl);
     }
 
     /**
@@ -240,5 +245,80 @@ class FTP extends Base implements IBackupProvider
     {
         $ftp = new FTPSettings();
         return (string)$ftp->enabled === "1";
+    }
+
+    private function getCurlHandle($path = '')
+    {
+
+        $ftp = new FTPSettings();
+
+        if(!$ftp->url) {
+            throw new \Exception('URL is mandatory');
+        }
+
+        if(!$ftp->port) {
+            throw new \Exception('FTP Port is mandatory');
+        }
+
+        $handle = curl_init();
+
+        if(!$handle) {
+            throw new \Exception('Could not initialize cURL handle');
+        }
+
+        $url = (string)$ftp->url;
+        $user = (string)$ftp->user;
+        $port = (string)$ftp->port;
+
+        $curlOptions = [
+            CURLOPT_URL => $url . $path,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 60,
+            CURLOPT_USERPWD => $user,
+            CURLOPT_PORT => $port,
+        ];
+
+        // check ftp passive mode
+        if((string)$ftp->passive !== "1") {
+            syslog(LOG_DEBUG, 'ftp-backup: passive mode disabled');
+            $curlOptions[CURLOPT_FTPPORT] = '-';
+        }
+
+        if($ftp->password && strlen($ftp->password) >0) {
+            // append password if set
+            $curlOptions[CURLOPT_USERPWD] .= ":" . (string)$ftp->password;
+        }
+
+        if((string)$ftp->ssl === "1") {
+            syslog(LOG_DEBUG, 'ftp-backup: tls/ssl enabled');
+            $curlOptions[CURLOPT_FTPSSLAUTH] = CURLFTPAUTH_TLS; // let cURL choose the FTP authentication method (either SSL or TLS)
+        }
+
+        $this->setCurlOptions($handle, $curlOptions);
+
+        return $handle;
+    }
+
+    private function setCurlOptions($handle, $options)
+    {
+        if(!curl_setopt_array($handle, $options)) {
+            throw new \Exception('Could not set cURL options');
+        };
+    }
+
+    private function curlExecute($handle)
+    {
+
+        $response = curl_exec($handle);
+
+        $error = curl_error($handle);
+
+        curl_close($handle);
+
+        if($error) {
+            throw new \Exception($error);
+        }
+
+        return $response;
     }
 }
